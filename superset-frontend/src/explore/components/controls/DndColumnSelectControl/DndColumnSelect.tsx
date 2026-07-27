@@ -25,7 +25,10 @@ import { isEmpty } from 'lodash';
 import DndSelectLabel from 'src/explore/components/controls/DndColumnSelectControl/DndSelectLabel';
 import OptionWrapper from 'src/explore/components/controls/DndColumnSelectControl/OptionWrapper';
 import { OptionSelector } from 'src/explore/components/controls/DndColumnSelectControl/utils';
-import { DatasourcePanelDndItem } from 'src/explore/components/DatasourcePanel/types';
+import {
+  DatasourcePanelDndItem,
+  getDndItemValues,
+} from 'src/explore/components/DatasourcePanel/types';
 import { DndItemType } from 'src/explore/components/DndItemType';
 import ColumnSelectPopoverTrigger from './ColumnSelectPopoverTrigger';
 import { DndControlProps } from './types';
@@ -59,27 +62,41 @@ function DndColumnSelect(props: DndColumnSelectProps) {
     return new OptionSelector(optionsMap, multi, value);
   }, [multi, options, value]);
 
+  const getDroppedColumns = useCallback(
+    (item: DatasourcePanelDndItem) =>
+      getDndItemValues(item).filter(
+        (value): value is ColumnMeta =>
+          !!(value as ColumnMeta).column_name &&
+          (value as ColumnMeta).column_name in optionSelector.options,
+      ),
+    [optionSelector],
+  );
+
   const onDrop = useCallback(
     (item: DatasourcePanelDndItem) => {
-      const column = item.value as ColumnMeta;
+      const droppedColumns = getDroppedColumns(item);
       if (!optionSelector.multi && !isEmpty(optionSelector.values)) {
-        optionSelector.replace(0, column.column_name);
+        if (droppedColumns[0]) {
+          optionSelector.replace(0, droppedColumns[0].column_name);
+        }
       } else {
-        optionSelector.add(column.column_name);
+        droppedColumns.forEach(column => {
+          if (!optionSelector.has(column.column_name)) {
+            optionSelector.add(column.column_name);
+          }
+        });
       }
       onChange(optionSelector.getValues());
     },
-    [onChange, optionSelector],
+    [getDroppedColumns, onChange, optionSelector],
   );
 
   const canDrop = useCallback(
-    (item: DatasourcePanelDndItem) => {
-      const columnName = (item.value as ColumnMeta).column_name;
-      return (
-        columnName in optionSelector.options && !optionSelector.has(columnName)
-      );
-    },
-    [optionSelector],
+    (item: DatasourcePanelDndItem) =>
+      getDroppedColumns(item).some(
+        column => !optionSelector.has(column.column_name),
+      ),
+    [getDroppedColumns, optionSelector],
   );
 
   const onClickClose = useCallback(
@@ -191,7 +208,7 @@ function DndColumnSelect(props: DndColumnSelectProps) {
         onDrop={onDrop}
         canDrop={canDrop}
         valuesRenderer={valuesRenderer}
-        accept={DndItemType.Column}
+        accept={[DndItemType.Column, DndItemType.Folder]}
         displayGhostButton={multi || optionSelector.values.length === 0}
         ghostButtonText={labelGhostButtonText}
         onClickGhostButton={openPopover}

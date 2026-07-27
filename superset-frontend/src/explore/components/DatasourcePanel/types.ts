@@ -23,7 +23,9 @@ import { DndItemType } from '../DndItemType';
 export type DndItemValue = ColumnMeta | Metric;
 
 export interface DatasourcePanelDndItem {
-  value: DndItemValue;
+  // an array only for DndItemType.Folder, carrying every column/metric
+  // the dragged folder (and its sub-folders) contain
+  value: DndItemValue | DndItemValue[];
   type: DndItemType;
 }
 
@@ -31,6 +33,12 @@ export function isDatasourcePanelDndItem(
   item: any,
 ): item is DatasourcePanelDndItem {
   return item?.value && item?.type;
+}
+
+// Normalizes a dropped item's value to an array, regardless of whether it's
+// a single column/metric drag or a DndItemType.Folder drag of many.
+export function getDndItemValues(item: DatasourcePanelDndItem): DndItemValue[] {
+  return Array.isArray(item.value) ? item.value : [item.value];
 }
 
 export function isSavedMetric(item: any): item is Metric {
@@ -92,4 +100,13 @@ export interface FlattenedItem {
   height: number;
   totalItems?: number;
   showingItems?: number;
+}
+
+// Recursively collects every column/metric directly or transitively
+// contained in a folder, so an entire folder can be dragged as one item.
+export function flattenFolderItems(folder: Folder): FolderItem[] {
+  return [
+    ...folder.items,
+    ...(folder.subFolders?.flatMap(flattenFolderItems) ?? []),
+  ];
 }

@@ -35,6 +35,8 @@ import AdhocMetricPopoverTrigger from 'src/explore/components/controls/MetricCon
 import MetricDefinitionValue from 'src/explore/components/controls/MetricControl/MetricDefinitionValue';
 import {
   DatasourcePanelDndItem,
+  DndItemValue,
+  getDndItemValues,
   isDatasourcePanelDndItem,
 } from 'src/explore/components/DatasourcePanel/types';
 import { DndItemType } from 'src/explore/components/DndItemType';
@@ -43,7 +45,28 @@ import { savedMetricType } from 'src/explore/components/controls/MetricControl/t
 import { AGGREGATES } from 'src/explore/constants';
 
 const EMPTY_OBJECT = {};
-const DND_ACCEPTED_TYPES = [DndItemType.Column, DndItemType.Metric];
+const DND_ACCEPTED_TYPES = [
+  DndItemType.Column,
+  DndItemType.Metric,
+  DndItemType.Folder,
+];
+
+const isMetricValue = (value: DndItemValue): value is Metric =>
+  Boolean((value as Metric)?.metric_name);
+
+const getDefaultAggregateConfig = (column: ColumnMeta) => {
+  const config: Partial<AdhocMetric> = { column };
+  if (column.type_generic === GenericDataType.Numeric) {
+    config.aggregate = AGGREGATES.SUM;
+  } else if (
+    column.type_generic === GenericDataType.String ||
+    column.type_generic === GenericDataType.Boolean ||
+    column.type_generic === GenericDataType.Temporal
+  ) {
+    config.aggregate = AGGREGATES.COUNT_DISTINCT;
+  }
+  return config;
+};
 
 const isDictionaryForAdhocMetric = (value: QueryFormMetric) =>
   value &&
@@ -178,25 +201,38 @@ const DndMetricSelect = (props: any) => {
   ]);
 
   const canDrop = useCallback(
-    (item: DatasourcePanelDndItem) => {
-      if (
-        extra.disallow_adhoc_metrics &&
-        (item.type !== DndItemType.Metric ||
-          !savedMetricSet.has(item.value.metric_name))
-      ) {
-        return false;
-      }
-
-      const isMetricAlreadyInValues =
-        item.type === 'metric' ? value.includes(item.value.metric_name) : false;
-      return !isMetricAlreadyInValues;
-    },
+    (item: DatasourcePanelDndItem) =>
+      getDndItemValues(item).some(itemValue => {
+        const isMetric = isMetricValue(itemValue);
+        if (
+          extra.disallow_adhoc_metrics &&
+          !(isMetric && savedMetricSet.has(itemValue.metric_name))
+        ) {
+          return false;
+        }
+        return !(isMetric && value.includes(itemValue.metric_name));
+      }),
     [value, extra, savedMetricSet],
   );
 
   const onNewMetric = useCallback(
-    (newMetric: Metric) => {
+    (newMetric: Metric | AdhocMetric) => {
       const newValue = props.multi ? [...value, newMetric] : [newMetric];
+      setValue(newValue);
+      handleChange(newValue);
+    },
+    [handleChange, props.multi, value],
+  );
+
+  // Batched variant of onNewMetric: a folder drop can add many metrics at
+  // once, and adding them one by one via onNewMetric would have each call
+  // read the same stale `value` snapshot, silently dropping all but the last.
+  const onNewMetrics = useCallback(
+    (newMetrics: (Metric | AdhocMetric)[]) => {
+      if (!newMetrics.length) return;
+      const newValue = props.multi
+        ? [...value, ...newMetrics]
+        : [newMetrics[newMetrics.length - 1]];
       setValue(newValue);
       handleChange(newValue);
     },
@@ -333,13 +369,38 @@ const DndMetricSelect = (props: any) => {
     (item: DatasourcePanelDndItem) => {
       if (item.type === DndItemType.Metric) {
         onNewMetric(item.value as Metric);
+        return;
       }
       if (item.type === DndItemType.Column) {
         setDroppedItem(item);
         togglePopover(true);
+        return;
+      }
+      if (item.type === DndItemType.Folder) {
+        // A folder can hold many columns at once, so opening one aggregate
+        // popover per column isn't practical: saved metrics are added as-is,
+        // and raw columns get a sensible default aggregate applied silently.
+        const newMetrics: (Metric | AdhocMetric)[] = [];
+        getDndItemValues(item).forEach(itemValue => {
+          if (isMetricValue(itemValue)) {
+            if (
+              extra.disallow_adhoc_metrics &&
+              !savedMetricSet.has(itemValue.metric_name)
+            ) {
+              return;
+            }
+            if (value.includes(itemValue.metric_name)) return;
+            newMetrics.push(itemValue);
+          } else if (!extra.disallow_adhoc_metrics) {
+            newMetrics.push(
+              new AdhocMetric(getDefaultAggregateConfig(itemValue)),
+            );
+          }
+        });
+        onNewMetrics(newMetrics);
       }
     },
-    [onNewMetric, togglePopover],
+    [onNewMetric, onNewMetrics, togglePopover, extra, savedMetricSet, value],
   );
 
   const handleClickGhostButton = useCallback(() => {
@@ -352,21 +413,9 @@ const DndMetricSelect = (props: any) => {
       isDatasourcePanelDndItem(droppedItem) &&
       droppedItem.type === DndItemType.Column
     ) {
-      const itemValue = droppedItem.value as ColumnMeta;
-      // Cast config to handle ColumnMeta/ColumnType mismatch
-      const config = {
-        column: itemValue,
-      } as Partial<AdhocMetric>;
-      if (itemValue.type_generic === GenericDataType.Numeric) {
-        config.aggregate = AGGREGATES.SUM;
-      } else if (
-        itemValue.type_generic === GenericDataType.String ||
-        itemValue.type_generic === GenericDataType.Boolean ||
-        itemValue.type_generic === GenericDataType.Temporal
-      ) {
-        config.aggregate = AGGREGATES.COUNT_DISTINCT;
-      }
-      return new AdhocMetric(config);
+      return new AdhocMetric(
+        getDefaultAggregateConfig(droppedItem.value as ColumnMeta),
+      );
     }
     return new AdhocMetric({});
   }, [droppedItem]);

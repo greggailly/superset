@@ -29,7 +29,7 @@ export const EXPRESSION_TYPES = {
 
 interface ColumnType {
   column_name: string;
-  verbose_name?: string;
+  verbose_name?: string | null;
   // Allow additional properties from ColumnMeta and other column types
   [key: string]: unknown;
 }

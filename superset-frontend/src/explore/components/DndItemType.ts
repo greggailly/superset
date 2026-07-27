@@ -37,4 +37,8 @@ export enum DndItemType {
 
   // an adhoc filter option
   FilterOption = 'filterOption',
+
+  // a folder dragged from the datasource panel, carrying every
+  // column/metric it (and its sub-folders) contain
+  Folder = 'folder',
 }

@@ -28,6 +28,7 @@ import {
 import {
   DatasourcePanelDndItem,
   DndItemValue,
+  getDndItemValues,
 } from 'src/explore/components/DatasourcePanel/types';
 import { Icons } from '@superset-ui/core/components/Icons';
 import { DndItemType } from '../../DndItemType';
@@ -59,7 +60,10 @@ export default function DndSelectLabel({
 
   const dropValidator = useCallback(
     (item: DatasourcePanelDndItem) =>
-      canDropProp(item) && (canDropValueProp?.(item.value) ?? true),
+      canDropProp(item) &&
+      (canDropValueProp
+        ? getDndItemValues(item).every(canDropValueProp)
+        : true),
     [canDropProp, canDropValueProp],
   );
 
@@ -68,7 +72,7 @@ export default function DndSelectLabel({
 
     drop: (item: DatasourcePanelDndItem) => {
       props.onDrop(item);
-      props.onDropValue?.(item.value);
+      getDndItemValues(item).forEach(value => props.onDropValue?.(value));
     },
 
     canDrop: dropValidator,

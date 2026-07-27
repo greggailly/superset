@@ -36,6 +36,7 @@ import { DndItemType } from '../DndItemType';
 import { DatasourceFolder, DatasourcePanelColumn, DndItemValue } from './types';
 import { DropzoneContext } from '../ExploreContainer';
 import { DatasourceItems } from './DatasourceItems';
+import FolderDragPreview from './FolderDragPreview';
 import { transformDatasourceWithFolders } from './transformDatasourceFolders';
 
 interface DatasourceControl extends Omit<ControlConfig, 'hidden'> {
@@ -316,6 +317,7 @@ export default function DataSourcePanel({
 
   return (
     <DatasourceContainer>
+      <FolderDragPreview />
       {datasourceIsSaveable && showSaveDatasetModal && (
         <SaveDatasetModal
           visible={showSaveDatasetModal}

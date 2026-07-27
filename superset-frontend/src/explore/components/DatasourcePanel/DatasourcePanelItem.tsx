@@ -16,7 +16,15 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-import { CSSProperties, ReactNode, useCallback } from 'react';
+import {
+  CSSProperties,
+  ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+} from 'react';
+import { useDrag } from 'react-dnd';
+import { getEmptyImage } from 'react-dnd-html5-backend';
 
 import { t } from '@apache-superset/core/translation';
 import { useCSSTextTruncation } from '@superset-ui/core';
@@ -27,7 +35,12 @@ import { Tooltip } from '@superset-ui/core/components/Tooltip';
 import { Typography } from '@superset-ui/core/components';
 import DatasourcePanelDragOption from './DatasourcePanelDragOption';
 import { DndItemType } from '../DndItemType';
-import { DndItemValue, FlattenedItem, Folder } from './types';
+import {
+  DndItemValue,
+  FlattenedItem,
+  Folder,
+  flattenFolderItems,
+} from './types';
 
 const LabelWrapper = styled.div`
   ${({ theme }) => css`
@@ -82,6 +95,22 @@ const SectionHeaderButton = styled.button`
   width: 100%;
   height: 100%;
   padding-inline: 0;
+  min-width: 0;
+  cursor: inherit;
+`;
+
+const SectionHeaderRow = styled.div`
+  display: flex;
+  align-items: center;
+  width: 100%;
+
+  &:active {
+    cursor: grab;
+  }
+
+  &:hover {
+    cursor: grab;
+  }
 `;
 
 const SectionHeaderTextContainer = styled.div`
@@ -89,6 +118,24 @@ const SectionHeaderTextContainer = styled.div`
   justify-content: space-between;
   align-items: center;
   width: 100%;
+  min-width: 0;
+`;
+
+const FolderDragHandle = styled.div`
+  ${({ theme }) => css`
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    cursor: grab;
+    color: ${theme.colorFill};
+
+    &:hover {
+      color: ${theme.colorIcon};
+    }
+    &:active {
+      cursor: grab;
+    }
+  `}
 `;
 
 const SectionHeader = styled(Typography.Text)`
@@ -137,11 +184,36 @@ const DatasourcePanelItem = ({
     collapsedFolderIds,
   } = data;
   const item = flattenedItems[index];
+  const folder = item ? folderMap.get(item.folderId) : undefined;
   const theme = useTheme();
   const [labelRef, labelIsTruncated] = useCSSTextTruncation<HTMLSpanElement>({
     isVertical: true,
     isHorizontal: false,
   });
+
+  const folderItems = useMemo(
+    () => (folder ? flattenFolderItems(folder) : []),
+    [folder],
+  );
+
+  const [{ isDragging: isFolderDragging }, folderDrag, folderPreview] = useDrag(
+    {
+      item: {
+        value: folderItems as unknown as DndItemValue[],
+        type: DndItemType.Folder,
+      },
+      canDrag: folderItems.length > 0,
+      collect: monitor => ({
+        isDragging: monitor.isDragging(),
+      }),
+    },
+  );
+
+  // Suppress the browser's native drag ghost (a snapshot of the whole
+  // header) so only the FolderDragPreview "x columns" tag is shown.
+  useEffect(() => {
+    folderPreview(getEmptyImage(), { captureDraggingState: true });
+  }, [folderPreview]);
 
   const getTooltipNode = useCallback(
     (folder: Folder) => {
@@ -176,8 +248,6 @@ const DatasourcePanelItem = ({
   );
 
   if (!item) return null;
-
-  const folder = folderMap.get(item.folderId);
   if (!folder) return null;
 
   const indentation = item.depth * theme.sizeUnit * 4;
@@ -191,18 +261,36 @@ const DatasourcePanelItem = ({
       }}
     >
       {item.type === 'header' && (
-        <SectionHeaderButton onClick={() => onToggleCollapse(folder.id)}>
-          <Tooltip title={getTooltipNode(folder)}>
-            <SectionHeaderTextContainer>
-              <SectionHeader ref={labelRef}>{folder.name}</SectionHeader>
-              {collapsedFolderIds.has(folder.id) ? (
-                <Icons.DownOutlined iconSize="s" iconColor={theme.colorText} />
-              ) : (
-                <Icons.UpOutlined iconSize="s" iconColor={theme.colorText} />
-              )}
-            </SectionHeaderTextContainer>
-          </Tooltip>
-        </SectionHeaderButton>
+        <SectionHeaderRow
+          ref={folderItems.length > 0 ? folderDrag : undefined}
+          title={
+            folderItems.length > 0
+              ? t('Drag to add all %s items', folderItems.length)
+              : undefined
+          }
+          style={{ opacity: isFolderDragging ? 0.5 : 1 }}
+        >
+          <SectionHeaderButton onClick={() => onToggleCollapse(folder.id)}>
+            <Tooltip title={getTooltipNode(folder)}>
+              <SectionHeaderTextContainer>
+                <SectionHeader ref={labelRef}>{folder.name}</SectionHeader>
+                {collapsedFolderIds.has(folder.id) ? (
+                  <Icons.DownOutlined
+                    iconSize="s"
+                    iconColor={theme.colorText}
+                  />
+                ) : (
+                  <Icons.UpOutlined iconSize="s" iconColor={theme.colorText} />
+                )}
+              </SectionHeaderTextContainer>
+            </Tooltip>
+          </SectionHeaderButton>
+          {folderItems.length > 0 && (
+            <FolderDragHandle data-test="datasource-folder-drag-handle">
+              <Icons.Drag iconSize="m" />
+            </FolderDragHandle>
+          )}
+        </SectionHeaderRow>
       )}
 
       {item.type === 'subtitle' && (
